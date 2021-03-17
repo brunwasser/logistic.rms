@@ -1,0 +1,167 @@
+---
+title: "Logistic Regression Using the rms Package in R"
+author: "Steven Brunwasser, PhD"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    theme: sandstone
+    highlight: tango
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    code_folding: hide
+---
+
+```{r, setup, include=FALSE}
+knitr::opts_chunk$set(
+  warning = F, message = F
+)
+```
+
+
+
+## **Overview**
+The purpose here is to demonstrate how we can use [Frank Harrell's](https://www.fharrell.com/) [rms](https://cran.r-project.org/web/packages/rms/rms.pdf) to predict graduate school admissions (a binary outcome) using binary logistic regression. We will use hypothetical data provided by the UCLA Institute for Digital Research and Education (IDRE). You can see a demonstration of how to sue logistic regression using base R functions at the [UCLA IDRE site](https://stats.idre.ucla.edu/r/dae/logit-regression/). Additionally, I borrow helpful code from Nicholas Ollberding's helpful [introduction to the Harrell"verse"](https://www.nicholas-ollberding.com/post/an-introduction-to-the-harrell-verse-predictive-modeling-using-the-hmisc-and-rms-packages/) page. 
+
+We will be predicting admission to graduate school (*admit*: 0=not admitted; 1=admitted) using three predictor variables:
+
+* *gpa.* Undegraduate GPA: We'll treat this variable as continuous.
+* *gre.* GRE scores: We'll treat this variable as continuous.
+* *rank.* Level of prestige of the applicant's undergraduate institution: 4-level ordinal variable where 1=most prestigious and 4=least prestigious
+
+
+
+## **Prepare the Workspace**
+
+Load the required packages. Note, if you have never installed these packages you will have to do that first using the [install.packages()](https://www.rdocumentation.org/packages/utils/versions/3.6.2/topics/install.packages) function. We will be using the following packages:
+
+* [Hmisc](https://cran.r-project.org/web/packages/Hmisc/index.html)
+* [rms](https://cran.r-project.org/web/packages/rms/rms.pdf)
+* [ggplot2](https://cran.r-project.org/web/packages/ggplot2/index.html)
+* [cowplot](https://cran.r-project.org/web/packages/cowplot/vignettes/introduction.html)
+
+```{r packages}
+require( Hmisc )
+require( rms )
+require( ggplot2 )
+require( cowplot )
+```
+
+<br>
+
+The data can be loaded from the UCLA IDRE website. I will call the dataframe containing the study variable *admit.df*.
+
+```{r data}
+admit.df <- read.csv("https://stats.idre.ucla.edu/stat/data/binary.csv")
+```
+
+
+There are not missing values in this data set. We will essentially never have data without missing values, so I will add a small amount of missing data randomly.
+
+
+```{r missing}
+set.seed(202103101)
+miss.admit <- sample( row.names( admit.df ),  size = .01*length(admit.df$admit ) ) # 1% missing
+set.seed(202103102)
+miss.gre <- sample( row.names( admit.df ),  size = .02*length(admit.df$gre ) ) # 2% missing
+set.seed(202103102)
+miss.gpa <- sample( row.names( admit.df ),  size = .02*length(admit.df$gpa ) ) # 2% missing
+
+admit.df.miss <- admit.df
+
+admit.df.miss[ miss.admit, 'admit' ] <- NA
+admit.df.miss[ miss.gre, 'gre' ] <- NA
+admit.df.miss[ miss.gpa, 'gpa' ] <- NA
+```
+
+We'll make *admit* and *rank* factor variables.
+```{r}
+admit.df.miss$admit <- factor( admit.df.miss$admit,
+                               levels = 0:1,
+                               labels = c( 'Not admitted','Admitted' ) )
+admit.df.miss$rank <- factor( admit.df.miss$rank, 
+                   levels = 1:4,
+                   labels = c('Most','2nd most','3rd most','Least' ) )
+```
+
+
+## **Data Inspection**
+
+We use the describe() function in Hmisc to get basic descriptive statistics and distributional plots.
+
+```{r descriptives}
+( descript <- describe( admit.df.miss ) )
+plot( descript )
+```
+
+Typically, we would not know about the patterns of missing data in real data sets. The naclus() function in Hmisc will tell us the fractions of missing for each variable and provide information about the patterns of missingness across variables. We can see in the 2nd plot below that there is overlap in missingness (by design in this case) between *GPA* and *GRE*.
+
+```{r missingpattern}
+par(mfrow = c(1,2))
+na_patterns <- naclus( admit.df.miss )
+Hmisc::naplot(na_patterns, 'na per var')
+plot( na_patterns, ylim = c(0,.05) )
+```
+
+
+To help make plots based on our model and the observed data, we will use the datadist() function in rms to save information about the variables in the data set. We'll use the options() function to set the data distribution. 
+
+```{r datadist}
+ dd <- datadist( admit.df.miss )
+options( datadist = 'dd' )
+```
+
+
+
+## **Primary Model**
+
+We use the lrm() function in rms to run a logistic regression predicting admission based on values of our 3 predictor variables. Note, we don't want to assume that the continuous predictors (*gre* and *gpa*) are linearly related to the odds of admission; so we will use restricted cubic splines with four knots (using the rcs() function) to allow for flexible, non-linear associations with the outcome.
+
+```{r m1}
+m1 <- lrm( admit ~ rank + rcs(gre, 4 ) + rcs(gpa, 4),
+          data = admit.df.miss,
+          x=T, y=T) 
+```
+
+Once we run the model, we will want to get a sense of it's predictive accuracy. We'll focus on several indices:
+
+* *Nagelkerke's $R^2$*: This is a pseudo-$R^2$ value that we can interpret *approximately* (though not precisely) they way we interpret $R^2$ in ordinary least squares regression.
+* *$c$ statistic*: The concordance (*c*) statistic estimates the probability a randomly selected participant who had an event (e.g., in this case, grad school admission) had a higher model-predicted probability of admission than a person who was *not* admitted. A value of 0.5 tells us that our model was no better than chance in predicting which applicants were accepted, whereas a value of 1.0 indicates perfect discrimination between those accepted and not accepted. Generally speaking, we're aiming for a $c$ statistic $\ge$ 0.80.  
+* *Somers' $Dxy$*: This statistic is related to the $c$ statistic and compares the frequency of concordant and discordant pairs relative to the total number of possible pairs: [StacksExchange explanation](https://stats.stackexchange.com/questions/337343/interpreting-the-somers-d-statistics). 
+
+```{r discrim}
+print( m1, coefs = F )
+```
+
+```{r}
+m1boot <- bootcov( m1, B=5000, pr = F )
+```
+
+
+
+Now let's look at the extent to which our predictors helped us predict admission using the anova() function. We can see from the Wald statistics that the *rank* variable (prestige of the undergrad institution) and *gpa* appear to be making contributions to prediction, whereas there is not much evidence for the *gre* variable predicting admission. For the *gre* and *gpa* variables -- for which we specified restricted cubic splines -- the anova() output gives us tests for both the overall and non-linear effects. Finally, the anova() output tells us whether the predictors as a whole are accounting for variability in admissions and whether the nonlinear components as a whole are accounting for significant variability. 
+```{r}
+m1.aov <- anova( m1boot )
+m1.aov
+plot( m1.aov )
+```
+
+
+We also want to look at the individual contrasts. We can use the summary() argument to see the individual contrasts and their accompanying odds ratios. An increase in one point in the *gpa* variable (e.g., going from a 2.0 to 3.0) is predictive of a 2.56-fold increase in the odds of admission (95% CI: 1.27, 4.91). Going from the 2nd most prestigious institution category to the most prestigious is predictive of a 1.99-fold increase in odds of admission (95% CI: 1.02, 3.76). Being in the 3rd most prestigious category vs. the 2nd most prestigious is predictive of a reduction in the odds of admission by about half (OR=0.50, 95% CI: 0.28, 0.93), whereas being in the least prestigious institutional category relative to the 2nd most prestigious is predictive of a ~61% reduction in odds of admission (aOR 95% CI: 0.17, 0.78). 
+
+```{r}
+m1bootsum <- summary( m1boot, boot.type = 'bca' )
+m1bootsum
+plot( m1bootsum, title = 'Adjusted Odds Ratios' )
+```
+
+Now that we've interpreted the model, we'll want to plot the results to aid in interpretation.
+
+```{r}
+m1.pred.rank <- ggplot(Predict(m1boot, rank ))
+m1.pred.gre <- ggplot(Predict(m1boot, gre ))
+m1.pred.gpa <- ggplot(Predict(m1boot, gpa ))
+cowplot::plot_grid( m1.pred.rank, m1.pred.gre, m1.pred.gpa, nrow = 1, ncol = 3, scale = .9 )
+```
+`
+

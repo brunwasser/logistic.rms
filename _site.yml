@@ -1,0 +1,16 @@
+---
+name: "Logistic Regression Tutorial"
+navbar:
+  title: "My Website"
+  left:
+    - text: "Home"
+      href: index.html
+    - text: "Purpose"
+      href: about.html
+output:
+  html_document:
+    theme: sandstone
+    highlight: tango
+    toc: true
+    toc_depth: 3
+---

@@ -1,0 +1,5 @@
+---
+title: "Purpose"
+---
+
+The purpose here is to demonstrate how we can use [Frank Harrell's](https://www.fharrell.com/) [rms](https://cran.r-project.org/web/packages/rms/rms.pdf) to predict graduate school admissions (a binary outcome) using binary logistic regression. We will use hypothetical data provided by the UCLA Institute for Digital Research and Education (IDRE). You can see a demonstration of how to sue logistic regression using base R functions at the [UCLA IDRE site](https://stats.idre.ucla.edu/r/dae/logit-regression/). Additionally, I borrow helpful code from Nicholas Ollberding's helpful [introduction to the Harrell"verse"](https://www.nicholas-ollberding.com/post/an-introduction-to-the-harrell-verse-predictive-modeling-using-the-hmisc-and-rms-packages/) page.  
